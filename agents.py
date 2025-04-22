@@ -3,7 +3,6 @@ from autogen.agentchat import UserProxyAgent, ConversableAgent
 from config import llm_config, llm_dict
 from prompt import analyze_detect_prompt, function_detect_prompt
 from termcolor import colored
-from custom_agent import custom_proxy, fnc_agent
 # define your agent here
 
 
@@ -47,18 +46,6 @@ data_engineer = autogen.AssistantAgent(
     code_execution_config=False,
     human_input_mode="NEVER",
 )
-summary_generate = autogen.AssistantAgent(
-    name="summary_generate",
-    llm_config=llm_config,
-    system_message=SUMMARY_PROMPT,
-    code_execution_config=False,
-    human_input_mode="NEVER",
-)
-detect_analyze_agent = autogen.ConversableAgent(
-            'detect_analyze',
-            system_message=analyze_detect_prompt,
-            llm_config=llm_config,
-            human_input_mode='NEVER')
 
 sql_answer = autogen.AssistantAgent(
     name='sql_answer',
