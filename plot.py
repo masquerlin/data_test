@@ -2,7 +2,10 @@ import plotly
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-def _extract_python_code(self, markdown_string: str) -> str:
+from config import llm_config
+import re, autogen
+from agents import plot_agent
+def extract_python_code(markdown_string: str) -> str:
         # Strip whitespace to avoid indentation errors in LLM-generated code
         markdown_string = markdown_string.strip()
 
@@ -22,40 +25,25 @@ def _extract_python_code(self, markdown_string: str) -> str:
             return markdown_string
 
         return python_code[0]
-def _sanitize_plotly_code(self, raw_plotly_code: str) -> str:
+def sanitize_plotly_code(raw_plotly_code: str) -> str:
         # Remove the fig.show() statement from the plotly code
         plotly_code = raw_plotly_code.replace("fig.show()", "")
 
         return plotly_code
 
-def generate_plotly_code(
-        self, question: str = None, sql: str = None, df_metadata: str = None, **kwargs
+async def generate_plotly_code(
+        question: str = None, sql: str = None, df_metadata: str = None, **kwargs
     ) -> str:
-        if question is not None:
-            system_msg = f"The following is a pandas DataFrame that contains the results of the query that answers the question the user asked: '{question}'"
-        else:
-            system_msg = "The following is a pandas DataFrame "
+    user_msg = """user's question: {question};
+                    The DataFrame was produced using this query: {sql};
+                    pandas DataFrame 'df': \n{df_metadata}""".format(question=question, sql=sql, df_metadata=df_metadata)
 
-        if sql is not None:
-            system_msg += f"\n\nThe DataFrame was produced using this query: {sql}\n\n"
+    plotly_code = await plot_agent.a_generate_reply(messages=[{'role':'user', 'content': user_msg}])
 
-        system_msg += f"The following is information about the resulting pandas DataFrame 'df': \n{df_metadata}"
+    return sanitize_plotly_code(extract_python_code(plotly_code))
 
-        message_log = [
-            self.system_message(system_msg),
-            self.user_message(
-                "Can you generate the Python plotly code to chart the results of the dataframe? Assume the data is in a pandas dataframe called 'df'. If there is only one value in the dataframe, use an Indicator. Respond with only Python code. Do not answer with any explanations -- just the code."
-            ),
-        ]
-
-        plotly_code = self.submit_prompt(message_log, kwargs=kwargs)
-
-        return self._sanitize_plotly_code(self._extract_python_code(plotly_code))
-
-
-
-def get_plotly_figure(
-        self, plotly_code: str, df: pd.DataFrame, dark_mode: bool = True
+async def get_plotly_figure(
+        plotly_code: str, df: pd.DataFrame, dark_mode: bool = True
     ) -> plotly.graph_objs.Figure:
         """
         **Example:**
@@ -108,3 +96,8 @@ def get_plotly_figure(
             fig.update_layout(template="plotly_dark")
 
         return fig
+    
+async def plot(question: str = None, sql: str = None, df: pd.DataFrame = None,):
+    plot_code = await generate_plotly_code(question=question, sql=sql, df_metadata=f"Running df.dtypes gives:\n {df.dtypes}")
+    fig = await get_plotly_figure(plotly_code=plot_code, df=df, dark_mode=False)
+    return fig

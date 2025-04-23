@@ -1,6 +1,5 @@
 # put your config here
 import argparse, os, sys
-from funasr import AutoModel
 from dotenv import load_dotenv
 def load_env_from_single_arg():
     """
@@ -110,15 +109,6 @@ def reverse_cn_map(cn_map):
             en_to_cn_map[db_name_cn]['table_cn_map'][table_name_cn] = table_key
     return en_to_cn_map
 db_en_map = reverse_cn_map(db_cn_map)
-stt_model_dir = os.getenv('STT_MODEL', "/model/paraformer-zh")
-stt_device = os.getenv('STT_DEVICE', "cpu")
-stt_model = AutoModel(
-    model=stt_model_dir,
-    vad_model=os.getenv('VAD_MODEL', "/model/fsmn-vad"),
-    vad_kwargs={"max_single_segment_time": 30000},
-    punc_model=os.getenv('PUNC_MODEL', "/model/ct-punc"),
-    device="cpu",
-)
 bge_model_path = os.getenv('BGE_MODEL', '/model/bge-reranker-v2-m3',)
 if __name__ == '__main__':
     db_en_map = reverse_cn_map(db_cn_map)

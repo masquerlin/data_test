@@ -2,3 +2,5 @@ pyautogen==0.2.33
 plotly
 pandas
 torch
+kaleido
+transformer

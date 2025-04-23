@@ -1,12 +1,12 @@
 import autogen, os
 from autogen.agentchat import UserProxyAgent, ConversableAgent
 from config import llm_config, llm_dict
-from prompt import analyze_detect_prompt, function_detect_prompt
+from prompt import plot_system_prompt
 from termcolor import colored
 # define your agent here
 
 
-DATA_ENGINEER_PROMPT = "You are an professional SQL engineer, Generate the initial SQL based on the requirements provided. Just return SQL query.The database type is SQL Server."
+DATA_ENGINEER_PROMPT = "You are an professional SQL engineer, Generate the initial SQL based on the requirements provided. Just return SQL query.The database type is postgresql."
 SUMMARY_PROMPT = "A text summarization expert, skilled at extracting the core essence from dialogue content."
 
 
@@ -38,6 +38,11 @@ sql_agent = autogen.AssistantAgent(
     llm_config=llm_config,
 )
 
+plot_agent = autogen.AssistantAgent(
+    name='plot',
+    system_message=plot_system_prompt,
+    llm_config=llm_config
+)
 
 data_engineer = autogen.AssistantAgent(
     name="Engineer",
@@ -57,30 +62,4 @@ code_answer = autogen.AssistantAgent(
     name='code_answer',
     system_message="""Answer the user's question according to the code and the output of the code execution""",
     llm_config=llm_config,
-)
-
-# fnc_user_proxy = custom_proxy(
-#     name="user_proxy",
-#     is_termination_msg=lambda x: x.get("content", "") and x.get("content", "").rstrip().endswith("TERMINATE"),
-#     human_input_mode="NEVER",
-#     max_consecutive_auto_reply=2,
-#     code_execution_config=False
-# )
-# fnc_chatbot = fnc_agent(
-#     name="chatbot",
-#     system_message=function_detect_prompt,
-#     llm_config=llm_config
-# )
-
-fnc_user_proxy = UserProxyAgent(
-    name="user_proxy",
-    is_termination_msg=lambda x: x.get("content", "") and x.get("content", "").rstrip().endswith("TERMINATE"),
-    human_input_mode="NEVER",
-    max_consecutive_auto_reply=2,
-    code_execution_config=False
-)
-fnc_chatbot = ConversableAgent(
-    name="chatbot",
-    system_message=function_detect_prompt,
-    llm_config=llm_dict.get(os.getenv('FUNC_MODEL', 'max'))
 )

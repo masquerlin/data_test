@@ -1,15 +1,20 @@
 import os, json, pymssql, asyncio, autogen, torch
 from datetime import datetime
 import util
-from util import get_db_param, json_to_excel, json_to_dataframe
+from util import get_db_param
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import BertTokenizer, BertModel
 from config import STATIC_DIR, bge_model_path
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
-from agents import data_engineer, sql_answer
+from agents import data_engineer
 from prompt import POSTGRES_TABLE_DEFINITIONS_CAP_REF, NOTE, EXAMPLE
 from util import plot_data
-
+import pandas as pd
+import psycopg2
+from psycopg2.sql import SQL, Identifier
+from plot import plot
+bge_model = AutoModelForSequenceClassification.from_pretrained(bge_model_path)
+bge_tokenizer = AutoTokenizer.from_pretrained(bge_model_path)
 plot_instance = plot_data()
 
 class AgentInstruments:
@@ -42,7 +47,6 @@ class AgentInstruments:
     @property
     def root_dir(self):
         return os.path.join(STATIC_DIR, self.session_id)
-
 
 class PostgresAgentInstruments(AgentInstruments):
     """
@@ -183,13 +187,7 @@ class PostgresAgentInstruments(AgentInstruments):
 
         return True, ""
 
-
-
 class PostgresManager:
-    """
-    A class to manage postgres connections and queries
-    """
-
     def __init__(self):
         self.conn = None
         self.cur = None
@@ -204,33 +202,63 @@ class PostgresManager:
             self.conn.close()
 
     def connect_with_url(self, url):
-        self.conn = pymssql.connect(**url)
+        self.conn = psycopg2.connect(url)
         self.cur = self.conn.cursor()
 
-    def close(self):
-        if self.cur:
-            self.cur.close()
-        if self.conn:
-            self.conn.close()
+    def upsert(self, table_name, _dict):
+        columns = _dict.keys()
+        values = [SQL("%s")] * len(columns)
+        upsert_stmt = SQL(
+            "INSERT INTO {} ({}) VALUES ({}) ON CONFLICT (id) DO UPDATE SET {}"
+        ).format(
+            Identifier(table_name),
+            SQL(", ").join(map(Identifier, columns)),
+            SQL(", ").join(values),
+            SQL(", ").join(
+                [
+                    SQL("{} = EXCLUDED.{}").format(Identifier(k), Identifier(k))
+                    for k in columns
+                ]
+            ),
+        )
+        self.cur.execute(upsert_stmt, list(_dict.values()))
+        self.conn.commit()
+
+    def delete(self, table_name, _id):
+        delete_stmt = SQL("DELETE FROM {} WHERE id = %s").format(Identifier(table_name))
+        self.cur.execute(delete_stmt, (_id,))
+        self.conn.commit()
+
+    def get(self, table_name, _id):
+        select_stmt = SQL("SELECT * FROM {} WHERE id = %s").format(
+            Identifier(table_name)
+        )
+        self.cur.execute(select_stmt, (_id,))
+        return self.cur.fetchone()
+
+    def get_all(self, table_name):
+        select_all_stmt = SQL("SELECT * FROM {}").format(Identifier(table_name))
+        self.cur.execute(select_all_stmt)
+        return self.cur.fetchall()
+
+    # def run_sql(self, sql):
+    #     self.cur.execute(sql)
+    #     return self.cur.fetchall()
 
     def run_sql(self, sql) -> str:
-        """
-        Run a SQL query against the postgres database
-        """
-        try:
-            self.cur.execute(sql)
-            columns = [desc[0] for desc in self.cur.description]
-            res = self.cur.fetchall()
+        self.cur.execute(sql)
+        columns = [desc[0] for desc in self.cur.description]
+        res = self.cur.fetchall()
 
-            list_of_dicts = [dict(zip(columns, row)) for row in res]
+        list_of_dicts = [dict(zip(columns, row)) for row in res]
 
-            json_result = json.dumps(list_of_dicts, indent=4, ensure_ascii=False, default=self.datetime_handler)
+        json_result = json.dumps(list_of_dicts, indent=4, default=self.datetime_handler)
 
-            return json_result
+        # dump these results to a file
+        with open("results.json", "w") as f:
+            f.write(json_result)
 
-        except Exception as e:
-            return f'Error occurred when execute the sql: {str(e)} Please construct a new SQL query.'
-
+        return json_result
 
     def datetime_handler(self, obj):
         """
@@ -242,117 +270,91 @@ class PostgresManager:
 
     def get_table_definition(self, table_name):
         """
-        Generate the 'create' definition for a table
+        获取表的详细信息，包括列名、数据类型和注释
+        返回格式化的字符串，便于理解表结构和编写SQL
         """
-
-        get_def_stmt = """
-            SELECT 
-                t.name AS tablename,
-                c.column_id AS attnum,
-                c.name AS attname,
-                TYPE_NAME(c.system_type_id) AS data_type
-            FROM 
-                sys.tables t
-            JOIN 
-                sys.columns c ON t.object_id = c.object_id
-            WHERE 
-                t.name = %s  -- Assuming @TableName is a parameter
-                AND SCHEMA_NAME(t.schema_id) = 'dbo'  -- Assuming you're interested in dbo schema
-            ORDER BY 
-                c.column_id;
+        query = """
+        SELECT 
+            a.attname as column_name,
+            format_type(a.atttypid, a.atttypmod) as data_type,
+            pd.description as comment
+        FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_class c ON a.attrelid = c.oid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        LEFT JOIN pg_catalog.pg_description pd ON 
+            pd.objoid = a.attrelid AND pd.objsubid = a.attnum
+        WHERE c.relname = %s
+            AND n.nspname = 'public'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+        ORDER BY a.attnum
         """
-        self.cur.execute(get_def_stmt, (table_name,))
-        rows = self.cur.fetchall()
-        create_table_stmt = "CREATE TABLE {} (\n".format(table_name)
-        for row in rows:
-            create_table_stmt += "{} {},\n".format(row[2], row[3])
-        create_table_stmt = create_table_stmt.rstrip(",\n") + "\n);"
-        return create_table_stmt
+        
+        self.cur.execute(query, (table_name,))
+        columns = self.cur.fetchall()
+        
+        # 格式化表信息
+        result = f"表名: {table_name}\n"
+        result += "-" * 60 + "\n"
+        result += "列名".ljust(20) + "数据类型".ljust(20) + "注释\n"
+        result += "-" * 60 + "\n"
+        
+        for col in columns:
+            col_name = col[0]
+            data_type = col[1]
+            comment = col[2] if col[2] else ""
+            
+            result += f"{col_name}".ljust(20)
+            result += f"{data_type}".ljust(20)
+            result += f"{comment}\n"
+        return result
 
     def get_all_table_names(self):
-        """
-        Get all table names in the database
-        """
         get_all_tables_stmt = (
-            "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE';"
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public';"
         )
         self.cur.execute(get_all_tables_stmt)
         return [row[0] for row in self.cur.fetchall()]
 
     def get_table_definitions_for_prompt(self):
-        """
-        Get all table 'create' definitions in the database
-        """
         table_names = self.get_all_table_names()
         definitions = []
         for table_name in table_names:
             definitions.append(self.get_table_definition(table_name))
         return "\n\n".join(definitions)
 
+    def get_table_definitions_for_prompt_MOCK(self):
+        return """CREATE TABLE users (
+        id integer,
+        created timestamp without time zone,
+        updated timestamp without time zone,
+        authed boolean,
+        plan text,
+        name text,
+        email text
+        );
+
+        CREATE TABLE jobs (
+        id integer,
+        created timestamp without time zone,
+        updated timestamp without time zone,
+        parentuserid integer,
+        status text,
+        totaldurationms bigint
+            );"""
+
     def get_table_definition_map_for_embeddings(self):
-        """
-        Creates a map of table names to table definitions
-        """
         table_names = self.get_all_table_names()
         definitions = {}
         for table_name in table_names:
             definitions[table_name] = self.get_table_definition(table_name)
         return definitions
 
-    def get_related_tables(self, table_list, n=2):
-        """
-        Get tables that have foreign keys referencing the given table
-        """
-
-        related_tables_dict = {}
-
-        for table in table_list:
-            # Query to fetch tables that have foreign keys referencing the given table
-            self.cur.execute(
-                """
-                SELECT 
-                    OBJECT_NAME(fk.parent_object_id) AS table_name
-                FROM 
-                    sys.foreign_keys fk
-                WHERE 
-                    fk.referenced_object_id = OBJECT_ID(%s)
-                ORDER BY 
-                    table_name
-                OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY;
-                """,
-                (table, n),
-            )
-
-            related_tables = [row[0] for row in self.cur.fetchall()]
-
-            # Query to fetch tables that the given table references
-            self.cur.execute(
-                """
-                SELECT 
-                    OBJECT_NAME(fk.parent_object_id) AS table_name
-                FROM 
-                    sys.foreign_keys fk
-                WHERE 
-                    fk.referenced_object_id = OBJECT_ID(%s)
-                ORDER BY 
-                    table_name
-                OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY;
-                """,
-                (table, n),
-            )
-
-            related_tables += [row[0] for row in self.cur.fetchall()]
-
-            related_tables_dict[table] = related_tables
-
-        # convert dict to list and remove dups
-        related_tables_list = []
-        for table, related_tables in related_tables_dict.items():
-            related_tables_list += related_tables
-
-        related_tables_list = list(set(related_tables_list))
-
-        return related_tables_list
+    def close(self):
+        if self.cur:
+            self.cur.close()
+        if self.conn:
+            self.conn.close()
 
 
 class DatabaseEmbedder:
@@ -366,8 +368,8 @@ class DatabaseEmbedder:
         # self.model = BertModel.from_pretrained("bert-base-uncased", local_files_only=True)
         
         if rerank:
-            self.model = AutoModelForSequenceClassification.from_pretrained(bge_model_path)
-            self.tokenizer = AutoTokenizer.from_pretrained(bge_model_path)
+            self.model = bge_model
+            self.tokenizer = bge_tokenizer
         else:
             self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", local_files_only=True)
             self.model = BertModel.from_pretrained("bert-base-uncased", local_files_only=True)
@@ -569,26 +571,23 @@ class sql_analyze_father:
                 
             except Exception as e:
                 print(e)
-            data_sql = messages[-1].get('content')
-            summary_messages = [{'role':'user','content':raw_prompt}, {'role':'assistant','content':f'生成的sql: \n {sql} \n 执行的数据结果: {data_sql}'}]
-            print(summary_messages)
-            summary = await sql_answer.a_generate_reply(messages=summary_messages)
-            summary_content = summary['content'] if isinstance(summary, dict) else summary
-            print(f'final_answer: \n {summary_content}\n')
-            return sql, results, summary_content
-    
-    def make_data(self, input_data, excel_file, plot_file):
-        json_to_excel(input_data, excel_file)
-        df = json_to_dataframe(input_data)
-        print(df)
-        plot_data_html = plot_instance.auto_plot(df, plot_file)
-        return df, plot_file
+
+            return sql, results
 
 
 if __name__ == '__main__':
-    db_param = get_db_param('sale_database')
-    sql_instance = sql_analyze_father(data_engineer=data_engineer, client_id='dalin', db_param=db_param)
-    sql, results, summary = asyncio.run(sql_instance.run_sql_analyze(raw_prompt='哪些服装款式在销售中最受欢迎'))
-    df, plot_file = sql_instance.make_data(results, './xxx.xlsx', './yyyy.html')
-    print(sql,results, summary)
+    HOST = '0.0.0.0'
+    USER = 'wangdalin'
+    PASSWORD = 'wangdalin@666'
+    DATABASE = 'transportation'
+    PORT = 5432  # PostgreSQL 默认端口
+
+    DATA_DIR = '/mnt/e/data_test/data/第二部分'  # sql 和 csv 文件都放在这里
+    db_url = f"postgresql://{USER}:{PASSWORD.replace('@', '%40')}@{HOST}:{PORT}/{DATABASE}"
+    question = '车辆有多少? 画个柱形图'
+    sql_instance = sql_analyze_father(data_engineer=data_engineer, client_id='dalin', db_param=db_url)
+    sql, results = asyncio.run(sql_instance.run_sql_analyze(raw_prompt=question))
+    df = pd.DataFrame(json.loads(results))
+    fig = asyncio.run(plot(question=question, sql=sql, df=df))
+    fig.write_html('./test.html')
     pass

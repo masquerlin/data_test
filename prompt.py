@@ -20,6 +20,13 @@ When you find an answer, verify the answer carefully. Include verifiable evidenc
 Reply "TERMINATE" in the end when everything is done.
     """
 
+plot_system_prompt = """ you are a master of writing Python plotly code to chart the results of the dataframe base on the user's question and data
+Assume the data is in a pandas dataframe called 'df'.
+If there is only one value in the dataframe, use an Indicator. 
+Respond with only Python code. Do not answer with any explanations -- just the code.
+"""
+
+
 sql_system_message = """You are a helpful AI assistant in Data Analyze.
 According to the data below:
 file_data:

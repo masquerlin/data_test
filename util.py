@@ -6,9 +6,6 @@ from datetime import datetime
 from config import db_list_2
 import pandas as pd
 import re
-from pyecharts.charts import Page, Grid, Bar, Line, Scatter, Pie
-from pyecharts import options as opts
-from pyecharts.globals import ThemeType
 import pandas as pd
 import numpy as np
 from autogen.code_utils import CODE_BLOCK_PATTERN
