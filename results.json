@@ -1,14 +1,46 @@
 [
     {
-        "vehicle_type": 1,
-        "vehicle_count": 318953
+        "roadsect": "\u4e2d\u6d77\u8def\u897f\u4fa7",
+        "violation_count": 269
     },
     {
-        "vehicle_type": 2,
-        "vehicle_count": 6244
+        "roadsect": "\u4e1c\u6e7e\u5927\u9053\u5317\u4fa7",
+        "violation_count": 239
     },
     {
-        "vehicle_type": 3,
-        "vehicle_count": 156207
+        "roadsect": "\u632f\u6d77\u8def\u5357\u4fa7",
+        "violation_count": 218
+    },
+    {
+        "roadsect": "\u6ee8\u6d77\u6e7e\u5927\u9053\u6c99\u89d2\u6bb5\u4e1c\u4fa7",
+        "violation_count": 194
+    },
+    {
+        "roadsect": "\u6ee8\u6d77\u6e7e\u5927\u9053\u5357\u4fa7",
+        "violation_count": 130
+    },
+    {
+        "roadsect": "\u4e1c\u6e7e\u5927\u9053\u5357\u4fa7",
+        "violation_count": 102
+    },
+    {
+        "roadsect": "\u4e1c\u6d77\u8def\u5357\u4fa7",
+        "violation_count": 100
+    },
+    {
+        "roadsect": "\u4e1c\u6d77\u8def\u5317\u4fa7",
+        "violation_count": 78
+    },
+    {
+        "roadsect": "\u8fce\u5bbe\u8def\u5357\u4fa7",
+        "violation_count": 60
+    },
+    {
+        "roadsect": "\u5174\u6d77\u8def\u4e1c\u5357\u4fa7",
+        "violation_count": 50
+    },
+    {
+        "roadsect": "\u6ee8\u6d77\u6e7e\u5927\u9053\u5317\u4fa7",
+        "violation_count": 50
     }
 ]

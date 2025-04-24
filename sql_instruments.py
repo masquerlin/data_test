@@ -1,21 +1,17 @@
 import os, json, pymssql, asyncio, autogen, torch
 from datetime import datetime
 import util
-from util import get_db_param
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import BertTokenizer, BertModel
 from config import STATIC_DIR, bge_model_path
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from agents import data_engineer
-from prompt import POSTGRES_TABLE_DEFINITIONS_CAP_REF, NOTE, EXAMPLE
-from util import plot_data
 import pandas as pd
 import psycopg2
 from psycopg2.sql import SQL, Identifier
 from plot import plot
 bge_model = AutoModelForSequenceClassification.from_pretrained(bge_model_path)
 bge_tokenizer = AutoTokenizer.from_pretrained(bge_model_path)
-plot_instance = plot_data()
 
 class AgentInstruments:
     """
@@ -532,13 +528,7 @@ class sql_analyze_father:
                     self.table_name
                 )
 
-            prompt = f"Please meet the needs of the user: {raw_prompt}, "
-            prompt = self.add_cap_ref(
-                prompt,
-                f"and use these {POSTGRES_TABLE_DEFINITIONS_CAP_REF} to satisfy the database query.Please ensure that SQL has the highest efficiency and conforms to the syntax of the database.",
-                POSTGRES_TABLE_DEFINITIONS_CAP_REF,
-                table_definitions, NOTE, EXAMPLE
-            )
+            prompt = f"问题: {raw_prompt}" + "\n" + f"表的信息:\n {table_definitions}"
 
             messages = [{'role': 'user', 'content': prompt}]
             results = '[]'
@@ -549,15 +539,13 @@ class sql_analyze_father:
                     sql_reply = await data_engineer.a_generate_reply(messages=messages)
                     sql_reply = sql_reply if isinstance(sql_reply, dict) else {'role':'assistant', 'content':sql_reply}
                     sql = self.get_sql(sql_reply)
-                    if 'I dont know' in sql:
+                    if 'i dont know' in sql.lower():
                         i +=1 
                         continue
-
                     messages.append({'role':'user','content': sql})
                     results = db.run_sql(sql)
                     messages.append({'role':'assistant','content': results})
                     i += 1
-                print(f'messages before *****{messages}')
                 if i == 3 and (len(results)==0 or results == '[]' or 'Error occurred' in results):
                     del messages[-6:]
                     if 'I dont know' in sql:
@@ -566,8 +554,6 @@ class sql_analyze_father:
                         messages.append({'role':'assistant','content':f'生成sql出现了问题,结果为: {results}'})
                 else:
                     del messages[-2*i:-2]
-                print('\n ---------------- \n')
-                print(f'messages after *****{messages}')
                 
             except Exception as e:
                 print(e)

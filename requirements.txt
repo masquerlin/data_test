@@ -4,3 +4,5 @@ pandas
 torch
 kaleido
 transformer
+uvicorn
+fastapi

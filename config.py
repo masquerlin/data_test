@@ -21,7 +21,7 @@ def load_env_from_single_arg():
 load_env_from_single_arg()
 
 port = int(os.getenv('PORT',8067))
-file_url = os.getenv('FILE_URL',f"http://10.41.1.220:{port}")
+file_url = os.getenv('FILE_URL',f"http://localhost:{port}")
 api_key = os.getenv('API_KEY')
 base_url = os.getenv('BASE_URL','https://dashscope.aliyuncs.com/compatible-mode/v1')
 llm_config={
@@ -73,43 +73,15 @@ llm_config_turbo={
 llm_dict = {'deepseek':llm_config_ds, 'turbo':llm_config_turbo, 'plus':llm_config_plus,'max':llm_config,}
 STATIC_DIR = os.getenv('STATIC_DIR','/workspace')
 BASE_UPLOAD_DIRECTORY = os.getenv('BASE_UPLOAD_DIRECTORY','/app/workspace')
+HOST = '0.0.0.0'
+USER = 'wangdalin'
+PASSWORD = 'wangdalin@666'
+DATABASE = 'transportation'
+PORT = 5432  # PostgreSQL 默认端口
+DATA_DIR = '/mnt/e/data_test/data/第二部分'  # sql 和 csv 文件都放在这里
+db_url = f"postgresql://{USER}:{PASSWORD.replace('@', '%40')}@{HOST}:{PORT}/{DATABASE}"
 
-db_list_2 = [{
-            "host": "10.41.1.220",
-            "database": "sale_database",
-            "user": "sa",
-            "password": "wangdalin@666",
-            "port": "1433"
-        },
-        {
-            "host": "10.41.1.220",
-            "database": "cooperation",
-            "user": "sa",
-            "password": "wangdalin@666",
-            "port": "1433",
-        }]
-
-db_cn_map = {'sale_database':{
-    'name':'销售数据库','table_cn_map':{
-        'sale':'销售数据'}}, 
-        'cooperation':{'name':'商业往来数据库','table_cn_map':{
-        'SupplierPurchases':'供应商数据'}}}
-def reverse_cn_map(cn_map):
-    # 创建中文找英文的结构
-    en_to_cn_map = {}
-    for db_key, db_value in cn_map.items():
-        db_name_cn = db_value.get('name', db_key)
-        en_to_cn_map[db_name_cn] = {
-            'name': db_key,
-            'table_cn_map': {}
-        }
-
-        for table_key, table_value in db_value['table_cn_map'].items():
-            table_name_cn = table_value
-            en_to_cn_map[db_name_cn]['table_cn_map'][table_name_cn] = table_key
-    return en_to_cn_map
-db_en_map = reverse_cn_map(db_cn_map)
 bge_model_path = os.getenv('BGE_MODEL', '/model/bge-reranker-v2-m3',)
+
 if __name__ == '__main__':
-    db_en_map = reverse_cn_map(db_cn_map)
-    print(db_en_map)
+    pass
