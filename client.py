@@ -42,7 +42,7 @@ def send_sql_request(question, host="http://localhost", port=8067):
 
 # 示例调用
 if __name__ == "__main__":
-    question = "在什么路段出现比较多的违停?"
+    question = "2025年3月17日在园的车辆数有多少?"
     result = send_sql_request(question)
     if "error" in result:
         print("请求失败:", result)

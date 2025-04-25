@@ -3,7 +3,7 @@ from datetime import datetime
 import util
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import BertTokenizer, BertModel
-from config import STATIC_DIR, bge_model_path
+from config import STATIC_DIR, bge_model_path, base_url
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from agents import data_engineer
 import pandas as pd
@@ -250,9 +250,9 @@ class PostgresManager:
 
         json_result = json.dumps(list_of_dicts, indent=4, default=self.datetime_handler)
 
-        # dump these results to a file
-        with open("results.json", "w") as f:
-            f.write(json_result)
+        # # dump these results to a file
+        # with open("results.json", "w") as f:
+        #     f.write(json_result)
 
         return json_result
 
@@ -269,6 +269,18 @@ class PostgresManager:
         获取表的详细信息，包括列名、数据类型和注释
         返回格式化的字符串，便于理解表结构和编写SQL
         """
+        # 首先获取表的注释
+        table_comment_query = """
+        SELECT description
+        FROM pg_catalog.pg_description pd
+        JOIN pg_catalog.pg_class pc ON pd.objoid = pc.oid
+        WHERE pc.relname = %s AND pd.objsubid = 0
+        """
+        self.cur.execute(table_comment_query, (table_name,))
+        table_comment_result = self.cur.fetchone()
+        table_comment = table_comment_result[0] if table_comment_result else ""
+        
+        # 获取列信息
         query = """
         SELECT 
             a.attname as column_name,
@@ -290,19 +302,18 @@ class PostgresManager:
         columns = self.cur.fetchall()
         
         # 格式化表信息
-        result = f"表名: {table_name}\n"
-        result += "-" * 60 + "\n"
-        result += "列名".ljust(20) + "数据类型".ljust(20) + "注释\n"
-        result += "-" * 60 + "\n"
+        if table_comment:
+            result = f"- {table_name} 表 – {table_comment}：\n"
+        else:
+            result = f"- {table_name} 表：\n"
         
         for col in columns:
             col_name = col[0]
             data_type = col[1]
             comment = col[2] if col[2] else ""
             
-            result += f"{col_name}".ljust(20)
-            result += f"{data_type}".ljust(20)
-            result += f"{comment}\n"
+            result += f"{col_name} | {data_type} | {comment}\n"
+        
         return result
 
     def get_all_table_names(self):
@@ -354,11 +365,7 @@ class PostgresManager:
 
 
 class DatabaseEmbedder:
-    """
-    This class is responsible for embedding database table definitions and
-    computing similarity between user queries and table definitions.
-    """
-
+    
     def __init__(self, db: PostgresManager, rerank: bool):
         # self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased", local_files_only=True)
         # self.model = BertModel.from_pretrained("bert-base-uncased", local_files_only=True)
@@ -393,10 +400,7 @@ class DatabaseEmbedder:
         return table_definitions
 
     def add_table(self, table_name: str, text_representation: str):
-        """
-        Add a table to the database embedder.
-        Map the table name to its embedding and text representation.
-        """
+        
         if self.rerank:
             self.map_name_to_embeddings[table_name] = None
         else:
@@ -407,9 +411,7 @@ class DatabaseEmbedder:
         self.map_name_to_table_def[table_name] = text_representation
 
     def compute_embeddings(self, text):
-        """
-        Compute embeddings for a given text using the BERT model.
-        """
+
         inputs = self.tokenizer(
             text, return_tensors="pt", truncation=True, padding=True, max_length=512
         )
@@ -429,35 +431,19 @@ class DatabaseEmbedder:
                 score = 0.7*scores_1 + 0.3*scores_2
                 probs = torch.sigmoid(score)
                 result[tab] = probs
-            print(f'similarity : {result}')
             sorted_results = sorted(result.items(), key=lambda x: x[1], reverse=True)
             final_result = [x[0] for x in sorted_results]
             return final_result[:n]
     def get_similar_tables_via_embeddings(self, query, n=3):
-        """
-        Given a query, find the top 'n' tables that are most similar to it.
 
-        Args:
-        - query (str): The user's natural language query.
-        - n (int, optional): Number of top tables to return. Defaults to 3.
-
-        Returns:
-        - list: Top 'n' table names ranked by their similarity to the query.
-        """
-        # Compute the embedding for the user's query
         query_embedding = self.compute_embeddings(query)
-        # Calculate cosine similarity between the query and all tables
         similarities = {
             table: cosine_similarity(query_embedding, emb)[0][0]
             for table, emb in self.map_name_to_embeddings.items()
         }
-        # Rank tables based on their similarity scores and return top 'n'
         return sorted(similarities, key=similarities.get, reverse=True)[:n]
 
     def get_similar_table_names_via_word_match(self, query: str):
-        """
-        if any word in our query is a table name, add the table to a list
-        """
 
         tables = []
 
@@ -468,9 +454,7 @@ class DatabaseEmbedder:
         return tables
 
     def get_similar_tables(self, query: str, n=3):
-        """
-        combines results from get_similar_tables_via_embeddings and get_similar_table_names_via_word_match
-        """
+
         if self.rerank:
             similar_tables_via_embeddings = self.get_similar_tables_via_rerank(query, n)
         else:
@@ -483,9 +467,7 @@ class DatabaseEmbedder:
         return unique_list
 
     def get_table_definitions_from_names(self, table_names: list) -> str:
-        """
-        Given a list of table names, return their table definitions.
-        """
+
         table_defs = [
             self.map_name_to_table_def[table_name] for table_name in table_names
         ]
@@ -519,7 +501,7 @@ class sql_analyze_father:
                 database_embedder.add_table(name, table_def)
             if not self.table_name or self.table_name==[]:
                 similar_tables = database_embedder.get_similar_tables(raw_prompt, n=5)
-                print(f'similar_tables  {similar_tables}')
+
                 table_definitions = database_embedder.get_table_definitions_from_names(
                     similar_tables
                 )
@@ -532,28 +514,27 @@ class sql_analyze_father:
 
             messages = [{'role': 'user', 'content': prompt}]
             results = '[]'
-    
             i = 0
             try:
-                while i < 3 and (len(results)==0 or results == '[]' or 'Error occurred' in results ):
+                while i < 3 and (len(results)==0 or results == '[]' or not results or 'Error occurred' in results ):
                     sql_reply = await data_engineer.a_generate_reply(messages=messages)
                     sql_reply = sql_reply if isinstance(sql_reply, dict) else {'role':'assistant', 'content':sql_reply}
                     sql = self.get_sql(sql_reply)
                     if 'i dont know' in sql.lower():
                         i +=1 
                         continue
-                    messages.append({'role':'user','content': sql})
+                    messages.append({'role':'assistant','content': sql})
                     results = db.run_sql(sql)
-                    messages.append({'role':'assistant','content': results})
+                    messages.append({'role':'user','content': 'sql结果:' + results})
                     i += 1
-                if i == 3 and (len(results)==0 or results == '[]' or 'Error occurred' in results):
-                    del messages[-6:]
-                    if 'I dont know' in sql:
-                        messages.append({'role':'assistant','content':f'根据所提供的问题和表的信息的关联不够, 我无法召回相关的数据'})
-                    else:
-                        messages.append({'role':'assistant','content':f'生成sql出现了问题,结果为: {results}'})
-                else:
-                    del messages[-2*i:-2]
+                # if i == 3 and (len(results)==0 or results == '[]' or not results or 'Error occurred' in results):
+                #     del messages[-6:]
+                #     if 'I dont know' in sql:
+                #         messages.append({'role':'assistant','content':f'根据所提供的问题和表的信息的关联不够, 我无法召回相关的数据'})
+                #     else:
+                #         messages.append({'role':'assistant','content':f'生成sql出现了问题,结果为: {results}'})
+                # else:
+                #     del messages[-2*i:-2]
                 
             except Exception as e:
                 print(e)
@@ -562,18 +543,4 @@ class sql_analyze_father:
 
 
 if __name__ == '__main__':
-    HOST = '0.0.0.0'
-    USER = 'wangdalin'
-    PASSWORD = 'wangdalin@666'
-    DATABASE = 'transportation'
-    PORT = 5432  # PostgreSQL 默认端口
-
-    DATA_DIR = '/mnt/e/data_test/data/第二部分'  # sql 和 csv 文件都放在这里
-    db_url = f"postgresql://{USER}:{PASSWORD.replace('@', '%40')}@{HOST}:{PORT}/{DATABASE}"
-    question = '车辆有多少? 画个柱形图'
-    sql_instance = sql_analyze_father(data_engineer=data_engineer, client_id='dalin', db_param=db_url)
-    sql, results = asyncio.run(sql_instance.run_sql_analyze(raw_prompt=question))
-    df = pd.DataFrame(json.loads(results))
-    fig = asyncio.run(plot(question=question, sql=sql, df=df))
-    fig.write_html('./test.html')
     pass

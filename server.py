@@ -30,12 +30,11 @@ async def gen_sql(request:Request):
     sql, results = await sql_instance.run_sql_analyze(raw_prompt=question)
     time_str = str(int(time.time()))
     csv_file_name = time_str + '.csv'
-    fig_file_name = time_str + '.html'
+    fig_file_name = time_str + '.png'
     df = pd.DataFrame(json.loads(results))
     df.to_csv(os.path.join(BASE_UPLOAD_DIRECTORY, csv_file_name))
-    print(os.path.join(BASE_UPLOAD_DIRECTORY, csv_file_name))
     fig = await plot(question=question, sql=sql, df=df)
-    fig.write_html(os.path.join(BASE_UPLOAD_DIRECTORY, fig_file_name))
+    fig.write_image(os.path.join(BASE_UPLOAD_DIRECTORY, fig_file_name))
     
     
     return JSONResponse(content={
