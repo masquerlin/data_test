@@ -10,7 +10,7 @@ PASSWORD = 'wangdalin@666'
 DATABASE = 'transportation'
 PORT = 5432  # PostgreSQL 默认端口
 
-DATA_DIR = '/mnt/e/data_test/data/第二部分'  # sql 和 csv 文件都放在这里
+DATA_DIR = '/mnt/e/data_test/data/third'  # sql 和 csv 文件都放在这里
 db_url = f"postgresql://{USER}:{PASSWORD.replace('@', '%40')}@{HOST}:{PORT}/{DATABASE}"
 def insert_data():
     # 连接数据库

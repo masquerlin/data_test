@@ -41,7 +41,7 @@ async def gen_sql(request:Request):
         "sql":sql,
         "data":file_url + STATIC_DIR + '/' + csv_file_name,
         "fig": file_url + STATIC_DIR + '/' + fig_file_name, 
-        "sql_result":results
+        "sql_result":results[:3000] + '...'
         
     })
 

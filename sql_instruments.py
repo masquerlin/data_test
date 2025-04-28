@@ -518,7 +518,9 @@ class sql_analyze_father:
             try:
                 while i < 3 and (len(results)==0 or results == '[]' or not results or 'Error occurred' in results ):
                     sql_reply = await data_engineer.a_generate_reply(messages=messages)
+                    print(f'sql reply ********{sql_reply}')
                     sql_reply = sql_reply if isinstance(sql_reply, dict) else {'role':'assistant', 'content':sql_reply}
+                    
                     sql = self.get_sql(sql_reply)
                     if 'i dont know' in sql.lower():
                         i +=1 
